@@ -1,0 +1,1058 @@
+<%@page import="org.apache.commons.collections.CollectionUtils"%>
+<%@ include file="/init.jsp"%>
+<%@ page import="java.util.Collections" %>
+<%@ page import="java.util.ArrayList" %>
+
+<%@ page import="org.jsoup.Connection"%>
+<%@ page import="org.jsoup.HttpStatusException"%>
+<%@ page import="org.jsoup.Jsoup"%>
+
+<%@ page import="com.vmware.dp.model.Api"%>
+<%@ page import="com.vmware.dp.model.ApiMethod"%>
+<%@ page import="com.vmware.dp.model.ApiGroup"%>
+<%@ page import="com.vmware.dp.wbrepo.Tag" %>
+<%@ page import="com.vmware.dp.utils.ApiUtil"%>
+<%@ page import="com.liferay.portal.util.PortalUtil"%>
+<%@ page import="com.vmware.dp.utils.ProductUtil"%>
+<%@ page import="com.vmware.dp.utils.HostnameUtils"%>
+<%@ page import="com.vmware.dp.model.pagination.Page"%>
+
+<%@ include file="/html/api-explorer/global-styles.jsp" %>
+
+<%
+List<Api> apilist = (List<Api>) request.getAttribute("apilist");
+String sorter = (String) request.getAttribute("sorter");
+String keywords = (String) request.getAttribute("keywords");
+if (keywords == null)
+    keywords = "";
+
+int length = keywords.length();
+
+Map<String, Set<String>> productMap = (Map<String, Set<String>>) request.getAttribute("productMap");
+Set<String> productCategories = (Set<String>) request.getAttribute("productCategories");
+
+String[] categories = productCategories.toArray(new String[]{});
+ArrayUtils.reverse(categories);
+Map<String, Integer> lanMap = (HashMap<String, Integer>) request.getAttribute("lanMap");
+
+String backUrl = (String) request.getAttribute("backUrl");
+
+TranslationServiceUtil i18n = TranslationServiceUtil.getInstance();
+String language = themeDisplay.getLanguageId();
+
+Boolean apiGroupPage = (Boolean) request.getAttribute("apiGroupPage");
+%>
+
+<%@ include file="/html/api-explorer/api-list-style.jsp" %>
+
+<div class="row no-gutter search-results">
+    <!-- Filter -->
+    <div class="col-md-3 col-sm-4 col-xs-12 search-filter">
+        <div id="filters">
+            <div class="filter-border">
+               <span class="category-title">Filters</span>
+               <span class="category-action action-hide">HIDE</span>
+            </div>
+            <div class="filter-border filter-cond">
+               <div id="show-all">
+                    <ul class="fa-ul">
+                        <li class="code-tree-view">
+                            <i class="fa fa-square-o checkbox"></i>
+                            <span>Show only current versions</span>
+                        </li>
+                    </ul>
+               </div>
+               <c:if test="<%=productMap != null && !productMap.isEmpty() %>">
+                   <div class="filter-category cate-products">
+                       <div class="filter-title clearfix">
+                           <span class="category-title">Products</span>
+                           <i class="category-action fa fa-minus"></i>
+                           <span class="category-action action-clear">CLEAR</span>
+                       </div>
+                       <ul class="fa-ul">
+                           <%
+                           int prodCounter = 0;
+                           for(String product : productMap.keySet()) {
+                               String[] versionArr = productMap.get(product).toArray(new String[]{});
+                           %>
+                               <li class="code-tree-view <%=prodCounter++ < 5 ? "" : "collapse" %>">
+                                   <i class="fa fa-square-o checkbox"></i>
+                                   <span><%=product %></span>
+                                   <span class="expand">
+                                      <i class="fa fa-chevron-down float-right"></i>
+                                   </span>
+                                   <ul class="fa-ul cnode collapse">
+                                       <% for(int i = versionArr.length - 1; i >= 0; i--) { %>
+                                           <li class='<%=versionArr.length - i <= 5 ? "" : "collapse" %>'>
+                                               <i class='fa fa-square-o checkbox'></i>
+                                               <span><%=versionArr[i] %></span>
+                                               <input name="product" value="<%=product %>;<%=versionArr[i] %>" type="hidden"/>
+                                           </li>
+                                       <% } %>
+                                       <c:if test="<%=versionArr.length > 5 %>">
+                                           <li class="see-more">
+                                               <i class="fa fa-plus checkbox"></i>
+                                               <span>See More</span>
+                                           </li>
+                                       </c:if>
+                                   </ul>
+                               </li>
+                           <% } %>
+                           <c:if test="<%=productMap.size() > 5 %>">
+                               <li class="see-more">
+                                   <i class="fa fa-plus checkbox"></i>
+                                   <span>See More</span>
+                               </li>
+                           </c:if>
+                       </ul>
+                    </div>
+                </c:if>
+
+                <c:if test="<%= !apiGroupPage && productCategories != null && !productCategories.isEmpty() %>">
+                   <div class="filter-category cate-categories">
+                       <div class="filter-title clearfix">
+                           <span class="category-title" translate-text="dc.api.Categories">Categories</span>
+                           <i class="category-action fa fa-minus"></i>
+                           <span class="category-action action-clear">CLEAR</span>
+                       </div>
+                       <ul class="fa-ul">
+                           <% for(int i = 0; i < categories.length; i++) { %>
+                               <li class="code-tree-view <%=i < 5 ? "" : "collapse" %>">
+                                   <i class='fa fa-square-o checkbox'></i>
+                                   <span><translate-text-dynamic><%=StringUtils.capitaliseAllWords(categories[i]) %></translate-text-dynamic></span>
+                                   <input name="category" value="<%=categories[i].replace("&", "and") %>" type="hidden"/>
+                               </li>
+                           <% } %>
+                           <c:if test="<%=categories.length > 5 %>">
+                               <li class="see-more">
+                                   <i class="fa fa-plus checkbox"></i>
+                                   <span>See More</span>
+                               </li>
+                           </c:if>
+                       </ul>
+                    </div>
+                </c:if>
+                <c:if test="<%=lanMap != null && !lanMap.isEmpty() %>">
+                   <div class="filter-category cate-lans">
+                       <div class="filter-title clearfix">
+                           <span class="category-title" translate-text="dc.api.LanguageBindings">Language Bindings</span>
+                           <i class="category-action fa fa-minus"></i>
+                           <span class="category-action action-clear">CLEAR</span>
+                       </div>
+                       <ul class="fa-ul">
+                           <%
+                           int lanCounter = 0;
+                           for(Map.Entry<String, Integer> entry : lanMap.entrySet()) {
+                           %>
+                               <li class="code-tree-view <%=lanCounter++ < 5 ? "" : "collapse" %>">
+                                   <i class="fa fa-square-o checkbox"></i>
+                                   <span><%=entry.getKey() %></span>
+                                   <input name="language" value="<%=entry.getKey() %>" type="hidden"/>
+                               </li>
+                           <% } %>
+                           <c:if test="<%=lanMap.entrySet().size() > 5 %>">
+                               <li class="see-more">
+                                   <i class="fa fa-plus checkbox"></i>
+                                   <span>See More</span>
+                               </li>
+                           </c:if>
+                       </ul>
+                    </div>
+                </c:if>
+            </div>
+        </div>
+    </div>
+
+    <!-- Search result -->
+    <div class="col-md-9 col-sm-8 col-xs-12 results-list">
+        <div id="search-results-list" class="apis-content">
+            
+            <div id="search-results-sorter" class="row-fluid">
+                <span class="span7 api-sorter-psummary"></span>
+                <span class="span5 api-sorter-select">
+                    <select id="api-sorter">
+                        <option value="name" <%="name".equalsIgnoreCase(sorter) ? "selected" : "" %>>Sort By Name</option>
+                        <!--  
+                        <option value="version" <%="version".equalsIgnoreCase(sorter) ? "selected" : "" %>>Sort By Version</option>
+                        <option value="pv" <%="pv".equalsIgnoreCase(sorter) ? "selected" : "" %>>Sort By Popularity</option>
+                        -->
+                    </select>
+                </span>
+                
+            </div>
+            
+            <div id="search-results-actions" class="row-fluid">
+                <div>
+                    <c:if test="${not empty apilist }">
+                        <ul class="links ul-filterable">
+                            <% for (int i =0; i < apilist.size(); i++) {
+                                Api api = apilist.get(i);
+                                if (api == null) 
+                                    continue;
+
+                                String url = ApiUtil.getAPIHomepage(api);
+                                url =   (backUrl != null) ? url + "?p=" + backUrl : url;
+                            %>
+                                <li class="row-fluid">
+                                    <div class="row-fluid search-results-item">
+                                        <!--  <span class="span12 api-name"><%=api.getName() %></span>-->
+                                        <span class="span12 api-name-link">
+                                            <c:choose>
+                                                <c:when test="<%=api.isPrivate() && !api.isAvailable() %>">
+                                                    <a href="javascript:void(0);"
+                                                        title="<%=api.getName() %>"
+                                                        data-id="<%=api.getId()%>"
+                                                        data-description="<%=api.getDescription() %>"
+                                                        class="locked-artifact">
+                                                        <%int indexName1 = api.getName().toLowerCase().indexOf(keywords.toLowerCase());
+                                                          if(indexName1 != -1){
+                                                             String key = api.getName().substring(indexName1, indexName1+length);%>
+                                                             <%=api.getName().replaceAll(key, "\\<span class='highlight'>"+key+"</span>")%>
+                                                         <%}else{%>
+                                                             <%=api.getName()%>
+                                                         <%}%>
+                                                    </a>&nbsp;<span class="lock">&nbsp;</span>
+                                                </c:when>
+                                                <c:otherwise>
+                                                    <a href="<%= url%>" title="<%=api.getName() %>" data-id="<%=api.getId()%>">
+                                                        <%int indexName2 = api.getName().toLowerCase().indexOf(keywords.toLowerCase());
+                                                          if(indexName2 != -1){
+                                                             String key = api.getName().substring(indexName2, indexName2+length);%>
+                                                             <%=api.getName().replaceAll(key, "\\<span class='highlight'>"+key+"</span>")%>
+                                                         <%}else{%>
+                                                             <%=api.getName()%>
+                                                         <%}%>
+                                                    </a>
+                                                    <c:if test="<%=api.isPrivate() %>">
+                                                        &nbsp;<span class="unlock">&nbsp;</span>
+                                                    </c:if>
+                                                </c:otherwise>
+                                            </c:choose>
+                                        </span>
+                                        <%String apiVersion = StringUtils.join(api.getProducts(), ", ").replace(ApiUtil.PRODUCT_SPLITTER, " ");%>
+                                        <span class="span12 api-version">
+                                            <%int indexVersion = apiVersion.toLowerCase().indexOf(keywords.toLowerCase());
+                                            if(indexVersion != -1){
+                                                String key = apiVersion.substring(indexVersion, indexVersion+length);%>
+                                                <%=apiVersion.replaceAll(key, "\\<span class='highlight'>"+key+"</span>")%>
+                                            <%}else{%>
+                                                <%=apiVersion%>
+                                            <%}%>
+                                        </span>
+                                        <span class="span12 api-desc">
+                                            <%int indexDescription = api.getDescription().toLowerCase().indexOf(keywords.toLowerCase());
+                                            if(indexDescription != -1){
+                                                String key = api.getDescription().substring(indexDescription, indexDescription+length);%>
+                                                <%=api.getDescription().replaceAll(key, "\\<span class='highlight'>"+key+"</span>")%>
+                                            <%}else{%>
+                                                <%=api.getDescription()%>
+                                            <%}%>
+                                        </span>
+                                        <c:if test="<%=api.getMethods().size() > 0 %>">
+                                            <div class="method-border">
+                                                <c:if test="<%=keywords == null || keywords.isEmpty() %>">
+                                                    <span id="method-hide-<%=api.getId()%>" class="method-action">Expand</span>
+                                                </c:if>
+                                                <c:if test="<%=keywords != null && !keywords.isEmpty()%>">
+                                                    <span id="method-hide-<%=api.getId()%>" class="method-action">Collapse</span>
+                                                </c:if>
+                                            </div>
+                                            <c:if test="<%=keywords == null || keywords.isEmpty() %>">
+                                            <div class="collapse" id="methods-container-<%=api.getId()%>">
+                                            </c:if>
+                                            <c:if test="<%=keywords != null && !keywords.isEmpty()%>">
+                                            <div id="methods-container-<%=api.getId()%>">
+                                            </c:if>
+                                            <%
+                                            for(ApiMethod method : api.getMethods()){
+                                            %>
+                                                <div class="span12 api-method">
+                                                    <div class="col-md-12 method_row <%=StringUtils.defaultIfEmpty(method.getType(), "").toLowerCase()%>">
+                                                        <div class="http_method"><%=method.getType() %></div>
+                                                        <div class="path">
+                                                            <a href="<%=method.getUrl() %>">
+                                                                <%int indexMethod = method.getMethod().toLowerCase().indexOf(keywords.toLowerCase());
+                                                                if(indexMethod != -1){
+                                                                    String key = method.getMethod().substring(indexMethod, indexMethod+length);%>
+                                                                    <%=method.getMethod().replaceAll(key, "\\<span class='highlight'>"+key+"</span>")%>
+                                                                <%}else{%>
+                                                                    <%=method.getMethod()%>
+                                                                <%}%>
+                                                            </a>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            <%
+                                            }
+                                            %>
+                                            </div>
+                                        </c:if>
+                                        
+                                        <input type="hidden" name="apiId" value='<%= api.getId() %>' />
+                                        <input type="hidden" name="platform" value='<%= api.getPlatform() != null ? api.getPlatform().replace("&", "and") : api.getPlatform() %>' />
+                                        <c:if test="<%=api.getProducts() != null && api.getProducts().size() >0 %>">
+                                            <% for (String product : api.getProducts()) { %>
+                                                <input type="hidden" name="product" value="<%= product %>" />
+                                            <% } %>
+                                        </c:if>
+                                        <c:if test="<%=api.getLanguages() != null && api.getLanguages().size() >0 %>">
+                                            <% for (String lan : api.getLanguages()) { %>
+                                                <input type="hidden" name="programming-language" value="<%= lan %>" />
+                                            <% } %>
+                                        </c:if>
+                                    </div>
+                                </li>
+                            <% } %>
+                        </ul>
+                    </c:if>
+                </div>
+            </div>
+
+            <div id="search-results-bottom" class="row-fluid">
+                <div class="results-num-perpage">
+                    Show
+                    <select id="api-num-perpage">
+                        <option value="5">5</option>
+                        <option value="10">10</option>
+                        <option value="20">20</option>
+                        <option value="50">50</option>
+                    </select>
+                    per page
+                </div>
+                <div id="search-results-pagination" class="row-fluid"></div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<div id="see-more-filter" style="display: none;">
+    <div class="modal-header">
+        <span class="modal-title">Filter Results</span>
+        <i class="fa fa-times"></i>
+    </div>
+    <div class="modal-body">
+        <div class="filter-dlg d-flex">
+            <ul class="nav nav-pills justify-content-start">
+                <li class="nav-item">
+                    <a class="nav-link active" href="javascript:;" id="products">
+                        Products
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="javascript:;" id="categories">
+                        Categories
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="javascript:;" id="language-bindings">
+                        Language Bindings
+                    </a>
+                </li>
+                
+            </ul>
+            <div class="tab-content">
+                <div class="tab-pane products active" >
+                    <div>
+                        <div class="modal-search">
+                            <input class="searchbox" name="filter" placeholder="Search">
+                        </div>
+                        <ul class="fa-ul">
+                           <%
+                           for(String product : productMap.keySet()) {
+                               String[] versionArr = productMap.get(product).toArray(new String[]{});
+                           %>
+                               <li class="code-tree-view clearfix">
+                                   <i class="fa fa-square-o checkbox"></i>
+                                   <span><%=product %></span>
+                                   <span class="expand">
+                                      <i class="fa fa-chevron-down float-right"></i>
+                                   </span>
+                                   <ul class="fa-ul cnode collapse">
+                                       <% for(String version : versionArr) { %>
+                                           <li class=''>
+                                               <i class='fa fa-square-o checkbox'></i>
+                                               <span><%=version %></span>
+                                               <input name="product" value="<%=product %>;<%=version %>" type="hidden"/>
+                                           </li>
+                                       <% } %>
+                                   </ul>
+                               </li>
+                           <% } %>
+                        </ul>
+                    </div>
+                </div>
+                <div class="tab-pane categories inactive" >
+                    <div>
+                        <ul class="fa-ul">
+                            <% for(String category : categories) { %>
+                                <li class="code-tree-view clearfix">
+                                    <i class='fa fa-square-o checkbox'></i>
+                                    <span><translate-text-dynamic><%=StringUtils.capitaliseAllWords(category) %></translate-text-dynamic></span>
+                                    <input name="category" value='<%=category != null ? category.replace("&", "and") : category %>' type="hidden"/>
+                                </li>
+                            <% } %>
+                        </ul>
+                    </div>
+                </div>
+                <div class="tab-pane language-bindings inactive" >
+                    <div>
+                        <ul class="fa-ul">
+                            <% for(Map.Entry<String, Integer> entry : lanMap.entrySet()) { %>
+                                <li class="code-tree-view clearfix">
+                                    <i class="fa fa-square-o checkbox"></i>
+                                    <span><%=entry.getKey() %></span>
+                                    <input name="language" value="<%=entry.getKey() %>" type="hidden"/>
+                                </li>
+                            <% } %>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+    <div class="modal-footer">
+        <button class="btn btn-secondary" type="button">Cancel</button>
+        <button class="btn btn-tertiary" type="button">Clear</button>
+        <button class="btn btn-primary" type="button">Apply</button>
+    </div>
+</div>
+
+<script type="text/javascript">
+
+$(document).ready(function() {
+    var portletUrl = '<portlet:resourceURL />';
+    var tagsFilters = $(".tag-filter");
+    var filters = $("#filters");
+    var pageOptions = {};
+    var defaultPageNum = 1;
+    var defaultNumPerPage = 10;
+    var defaultSorter = 'name';
+    
+    // Method Expand/Collapse click handler
+    $('#search-results-actions li.row-fluid:not(.hide)').each(function(index, elem){
+        var apiid = $(elem).find('input[name=apiId]').val();
+        var id= '#method-hide-' + apiid;
+        var containerId= '#methods-container-' + apiid;
+
+        $(id).click(function(){
+            if($(this).text() == 'Collapse'){
+                $(containerId).addClass("collapse").removeClass("block");
+                $(this).text("Expand")
+            }else{
+                $(containerId).addClass("block").removeClass("collapse");
+                $(this).text("Collapse")
+            }
+        });
+    });
+ 
+    var scvProducts = [];
+    // Set filter while the 'Show only current versions' button is selected
+    var setFilters = function(){
+        if($('#show-all .fa-ul li>i').hasClass("fa-check-square")){
+            scvProducts = [];
+            $(".cate-products li.code-tree-view").each(function(){
+                scvProducts.push($(this).find('.cnode input:first').val().replace(/&/g, 'and'));
+            });
+        }
+    }
+
+    var doPagination = function(options){
+        // Clear hidden items
+        $('#search-results-actions li.row-fluid:not(.hide)').removeClass("p-hide");
+        var totalNum = $('#search-results-actions li.row-fluid:not(.hide)').length;
+        var numPerPage = options.numPerPage && options.numPerPage >= 5 ? options.numPerPage : defaultNumPerPage;
+        var totalPageNum = Math.floor(totalNum / numPerPage) + (totalNum % numPerPage == 0 ? 0 : 1);
+        // Reset page number when exceed the page scope
+        var pageNum = options.pageNum && options.pageNum > 0 ? options.pageNum : defaultPageNum;
+        if(pageNum > totalPageNum && totalPageNum > 0){
+            pageNum = totalPageNum;
+        }
+        var startIndex = 0;
+        var endIndex = 0;
+        if(pageNum * numPerPage <= totalNum){
+            startIndex = (pageNum-1) * numPerPage + 1;
+            endIndex = pageNum * numPerPage;
+            $('#search-results-actions li.row-fluid:not(.hide)').each(function(index){
+                if(index < (pageNum-1) * numPerPage || index >= pageNum * numPerPage){
+                    $(this).addClass("p-hide");
+                }
+            });
+        }
+        if(pageNum * numPerPage > totalNum){
+            startIndex = (pageNum-1) * numPerPage + 1;
+            endIndex = totalNum;
+            $('#search-results-actions li.row-fluid:not(.hide)').each(function(index){
+                if(index < (pageNum-1) * numPerPage || index >= pageNum * numPerPage){
+                    $(this).addClass("p-hide");
+                }
+            });
+        }
+        // Pagination summary
+        var psummary = '{0} - {1} of {2} APIs';
+        $('.api-sorter-psummary').html(psummary.replace('{0}', startIndex).replace('{1}', endIndex).replace('{2}', totalNum));
+        // Reset number per page
+        $('#api-num-perpage').val(numPerPage);
+        // Pagination buttons
+        $('#search-results-pagination').empty();
+        if(totalNum > 0){
+            $('.results-num-perpage').show();
+            if(pageNum == 1){
+                $('#search-results-pagination').append('<span class="api-pagination active"><i class="fa fa-angle-left" aria-hidden="true"></i></span>');
+            }else{
+                $('#search-results-pagination').append('<span class="api-pagination"><a href="javascript:void(0);"><i class="fa fa-angle-left" aria-hidden="true"></i></a></span>');
+            }
+            if(totalPageNum > 10){
+                var showPageStart = pageNum - 5 > 1 ? pageNum - 5 : 1;
+                var showPageEnd = totalPageNum > showPageStart + 9 ? showPageStart + 9 : totalPageNum;
+                for(var i = showPageStart; i <= showPageEnd; i++){
+                    $('#search-results-pagination').append('<span class="api-pagination {0}">{1}</span>'.replace('{0}', i == pageNum ? 'active' : '').replace('{1}', i == pageNum ? i : '<a href="javascript:void(0);">'+i+'</a>'));
+                }
+            }else{
+                for(var i = 1; i <= totalPageNum; i++){
+                    $('#search-results-pagination').append('<span class="api-pagination {0}">{1}</span>'.replace('{0}', i == pageNum ? 'active' : '').replace('{1}', i == pageNum ? i : '<a href="javascript:void(0);">'+i+'</a>'));
+                }
+            }
+            if(pageNum == totalPageNum){
+                $('#search-results-pagination').append('<span class="api-pagination active"><i class="fa fa-angle-right" aria-hidden="true"></i></span>');
+            }else{
+                $('#search-results-pagination').append('<span class="api-pagination"><a href="javascript:void(0);"><i class="fa fa-angle-right" aria-hidden="true"></i></a></span>');
+            }
+        }else{
+            $('.results-num-perpage').hide();
+            $('#search-results-pagination').append('<span class="api-pagination active">No result is found</span>');
+        }
+
+        // Modify url without refresh page
+        if (<%=!apiGroupPage%>) {
+        var socv = $('#show-all i').hasClass('fa-check-square') ? 1 : 0;
+        if(socv >= 0){
+            var products = '';
+            if(options.products){
+                $(options.products).each(function(){
+                    products += encodeURI(this.replace(/&/g, 'and')) + ",";
+                });
+            }
+            var categories = '';
+            if(options.categories){
+                $(options.categories).each(function(){
+                    categories += encodeURI(this.replace(/&/g, 'and')) + ",";
+                });
+            }
+            var lans = '';
+            if(options.lans){
+                $(options.lans).each(function(){
+                    lans += encodeURI(this.replace(/&/g, 'and')) + ",";
+                });
+            }
+            var url = window.location.href;
+            if(options.keywords){
+                url = updateParameterByName('keywords', options.keywords, url);
+            }
+            url = updateParameterByName('socv', socv, url);
+            if(products.length != 0){
+                url = updateParameterByName('products', window.btoa(products.substr(0, products.length - 1)), url);
+            }else{
+                url = removeParameter('products', url);
+            }
+            if(categories.length != 0){
+                url = updateParameterByName('categories', window.btoa(categories.substr(0, categories.length - 1)), url);
+            }else{
+                url = removeParameter('categories', url);
+            }
+            if(lans.length != 0){
+                url = updateParameterByName('lans', window.btoa(lans.substr(0, lans.length - 1)), url);
+            }else{
+                url = removeParameter('lans', url);
+            }
+            if(pageNum && pageNum > 0 && pageNum != defaultPageNum){
+                url = updateParameterByName('page', pageNum, url);
+            }else{
+                url = removeParameter('page', url);
+            }
+            if(numPerPage && numPerPage > 0 && numPerPage != defaultNumPerPage){
+                url = updateParameterByName('numPerPage', numPerPage, url);
+            }else{
+                url = removeParameter('numPerPage', url);
+            }
+            if($('#api-sorter').val() != defaultSorter){
+                url = updateParameterByName('sorter', $('#api-sorter').val(), url);
+            }else{
+                url = removeParameter('sorter', url);
+            }
+            window.history.pushState(null, null, url);
+            var savedFilter = updateParameterByName('keywords', '', url);
+            $.cookie("code_apis_filter", savedFilter, {
+                path : '/',
+                //domain : '.vmware.com,'
+                expires : 1
+            });
+        }else{
+            var url = window.location.href.replace(window.location.search, '');
+            if(options.keywords){
+                url = updateParameterByName('keywords', options.keywords, url);
+            }
+            if(options.sorter && options.sorter != defaultSorter){
+                url = updateParameterByName('sorter', options.sorter, url);
+            }
+            window.history.pushState(null, null, url);
+            //save to cookie
+            var savedFilter = updateParameterByName('keywords', '', url);
+            $.cookie("code_apis_filter", savedFilter, {
+                path : '/',
+                //domain : '.vmware.com,'
+                expires : 1
+            });
+        }
+        }
+    }
+
+    var doFilter = function(isCurrentVersion){
+        $('#search-results-actions li.row-fluid').removeClass("hide block p-hide");
+        var socv = $('#show-all i').hasClass('fa-check-square') ? 1 : 0;
+        var products = [], categories = [], lans = [];
+        if(socv == 1){
+            $(".cate-products li.code-tree-view").each(function(){
+                if($(this).has('i.fa-check-square').length > 0){
+                    $(this).find('.cnode li>i').each(function(index,element){
+                     console.log('=========================' + index);
+                        if(index===0){
+                            if(!$(this).hasClass('fa-check-square')){
+                            console.log('=========================qqqqqq' + index);
+                                $(this).addClass("fa-check-square").removeClass("fa-square-o");
+                            }                       
+                        }
+                        else{
+                            if($(this).hasClass('fa-check-square')){
+                                console.log('=========================bbbbbb' + index);
+                                $(this).addClass("fa-square-o").removeClass("fa-check-square");
+                            }
+                        }
+                    });
+                    
+                    if($(this).find('.cnode li>i').length > 1 ){
+                    	console.log('excute....' + $(this).find('.cnode li>i').length);
+                    	$(this).children('i').removeClass("fa-minus-square fa-check-square fa-square-o").addClass("fa-minus-square");	
+                    }
+                }
+            });
+        }
+        else{
+          if(isCurrentVersion){
+          	$(".cate-products li.code-tree-view").each(function(){
+                  if($(this).has('i.fa-check-square').length > 0){
+                  	if($(this).find('.cnode li>i').length > 1 ){
+  	                	$(this).find('.cnode li>i').each(function(index,element){
+  	                        if(!$(this).hasClass('fa-check-square')){
+  	                            $(this).addClass("fa-check-square").removeClass("fa-square-o");
+  	                        }
+  	                    });
+                          $(this).children('i').removeClass("fa-minus-square fa-check-square fa-square-o").addClass("fa-check-square");   
+                      }
+                  }
+              });
+            }
+        }
+        
+        $('.cate-products .cnode .fa-check-square').siblings().not('span').each(function(){
+            products.push($(this).val().replace(/&/g, 'and'));
+        });
+        $('.cate-categories .fa-check-square').siblings().not('span').each(function(){
+            categories.push($(this).val().replace(/&/g, 'and'));
+        });
+        $('.cate-lans .fa-check-square').siblings().not('span').each(function(){
+            lans.push($(this).val().replace(/&/g, 'and'));
+        });
+        pageOptions.products = products;
+        pageOptions.categories = categories;
+        pageOptions.lans = lans;
+        
+        $('#search-results-actions li.row-fluid').each(function(index, elem){
+            var isOfProduct = false;
+            if(products.length == 0){
+                isOfProduct = true;
+            }else{
+                $(elem).find('input[name=product]').each(function(){
+                    if($.inArray($(this).val(), products) > -1){
+                        isOfProduct = true;
+                        return false;
+                    }
+                });
+            }
+            var isOfPlatform = false;
+            if(categories.length == 0){
+                isOfPlatform = true;
+            }else{
+                $(elem).find('input[name=platform]').each(function(){
+                    if($.inArray($(this).val(), categories) > -1){
+                        isOfPlatform = true;
+                        return false;
+                    }
+                });
+            }
+            var isOfLan = false;
+            if(lans.length == 0){
+                isOfLan = true;
+            }else{
+                $(elem).find('input[name=programming-language]').each(function(){
+                    if($.inArray($(this).val(), lans) > -1){
+                        isOfLan = true;
+                        return false;
+                    }
+                });
+            }
+
+            if(isOfProduct && isOfPlatform && isOfLan){
+                $(this).addClass('block').removeClass('hide');
+            }else{
+                $(this).addClass('hide').removeClass('block');
+            }
+        });
+        // Pagination filter result
+        doPagination(pageOptions);
+    }
+
+    // Update parent node check status
+    var checkParentNode = function(triggerNode){
+        $('.cate-products .code-tree-view, .tab-content .products .code-tree-view').each(function(){
+            var totalNum = $(this).find('>ul>li[class!=see-more]').find('.fa.checkbox').length;
+            var selectedNum = $(this).find('>ul .fa.checkbox.fa-check-square').length;
+            if(totalNum != selectedNum && selectedNum > 0){
+                $(this).closest('.code-tree-view').find('i').first().addClass("fa-minus-square").removeClass("fa-check-square fa-square-o");
+            }
+            if(totalNum == selectedNum && selectedNum > 0){
+                $(this).closest('.code-tree-view').find('i').first().addClass("fa-check-square").removeClass("fa-minus-square fa-square-o");
+            }
+            if(totalNum > 0 && selectedNum == 0){
+                $(this).closest('.code-tree-view').find('i').first().addClass("fa-square-o").removeClass("fa-minus-square fa-check-square");
+            }
+        });
+    }
+
+    // Filter select handler
+    $(document).on('click', '.filter-category .fa-ul li, .tab-content .fa-ul li', function(e) {
+        e.stopPropagation();
+        if($(this).hasClass('see-more')){
+            return;
+        }
+        //diselect the "Show only current versions" button
+        //$('#show-all .fa-ul li>i').addClass("fa-square-o").removeClass("fa-check-square");
+
+        if($(this).find(">i").hasClass("fa-check-square")){
+            $(this).find("i[class*=square]").addClass("fa-square-o").removeClass("fa-check-square fa-minus-square");
+        }else{
+            $(this).find("i[class*=square]").addClass("fa-check-square").removeClass("fa-square-o fa-minus-square");
+        }
+        //reset parent node display style
+        checkParentNode(this);
+        //remove item which is not selected and index bigger then 5
+        $('.filter-category .code-tree-view').each(function(){
+            if($(this).index() > 4 && $(this).find('>i').hasClass('fa-square-o')){
+                $(this).addClass('collapse');
+            }
+        });
+        //do filter when values changed with left tree nodes
+        if($('.simplemodal-container').css('display') == 'block'){
+            return;
+        }else{
+            doFilter();
+        }
+    });
+
+    // "Show only current versions" button click handler
+    $(document).on('click', '#show-all .fa-ul li', function(e) {
+        if($(this).find(">i").hasClass("fa-check-square")){
+            $(this).find(">i").addClass("fa-square-o").removeClass("fa-check-square");
+        } else {
+            $(this).find(">i").addClass("fa-check-square").removeClass("fa-square-o");
+            setFilters();
+        }
+        doFilter(true);
+    });
+
+    // Add the interaction button click handler
+    $(document).on('click', '.fa-chevron-up, .fa-chevron-down', function(e) {
+        e.stopPropagation();
+        if($(this).hasClass("fa-chevron-up")){
+            $(this).closest(".code-tree-view").find("ul").addClass("collapse").removeClass("block");
+            $(this).addClass("fa-chevron-down").removeClass("fa-chevron-up");
+        }else{
+            $(this).closest(".code-tree-view").find("ul").addClass("block").removeClass("collapse");
+            $(this).addClass("fa-chevron-up").removeClass("fa-chevron-down");
+        }
+    });
+
+    // Collapse button click handler
+    $(".category-action.fa-minus, .category-action.fa-plus").click(function(){
+        if($(this).hasClass("fa-minus")){
+            $(this).closest(".filter-category").find(">ul>li").addClass("collapse").removeClass("block");
+            $(this).addClass("fa-plus").removeClass("fa-minus");
+        }else{
+            $(this).closest(".filter-category").find(">ul>li").each(function(index){
+                if(index < 5 || $(this).find('>i').is('.fa-minus-square,.fa-check-square') || $(this).hasClass("see-more")){
+                    $(this).removeClass("collapse");
+                }
+            });
+            $(this).addClass("fa-minus").removeClass("fa-plus");
+        }
+    });
+
+    // Clear button click handler
+    $(".category-action.action-clear").click(function(){
+        $(this).closest(".filter-category").find("i[class*=square]").addClass("fa-square-o").removeClass("fa-check-square fa-minus-square");
+        doFilter();
+    });
+
+    // HIDE/SHOW button click handler
+    $(".action-hide").click(function(){
+        if($(this).text() == 'HIDE'){
+            $('.filter-cond').addClass("collapse").removeClass("block");
+            $(this).text("SHOW")
+        }else{
+            $('.filter-cond').addClass("block").removeClass("collapse");
+            $(this).text("HIDE")
+        }
+    });
+
+   
+    // "See more" button click handler
+    $('.see-more').click(function(){
+        var options = {
+            width: '70%'
+        };
+        $('.tab-content i.checkbox').addClass('fa-square-o').removeClass("fa-check-square fa-minus-square");
+        $('.cate-products .cnode i.fa-check-square').each(function(){
+            var treeNodeVal = $($(this).siblings()[1]).val();
+            $('.tab-content .products .cnode .checkbox').each(function(){
+                var dialogNodeVal = $($(this).siblings()[1]).val();
+                if(treeNodeVal == dialogNodeVal){
+                    $(this).addClass("fa-check-square").removeClass("fa-square-o");
+                    $(this).closest('.code-tree-view').removeClass('collapse');
+                    return false;
+                }
+            });
+        });
+        checkParentNode(this);
+        $('.cate-categories i.fa-check-square').each(function(){
+            var treeNodeVal = $($(this).siblings()[1]).val();
+            $('.tab-content .categories .checkbox').each(function(){
+                var dialogNodeVal = $($(this).siblings()[1]).val();
+                if(treeNodeVal == dialogNodeVal){
+                    $(this).addClass("fa-check-square").removeClass("fa-square-o");
+                    $(this).closest('.code-tree-view').removeClass('collapse');
+                    return false;
+                }
+            });
+        });
+        $('.cate-lans i.fa-check-square').each(function(){
+            var treeNodeVal = $($(this).siblings()[1]).val();
+            $('.tab-content .language-bindings .checkbox').each(function(){
+                var dialogNodeVal = $($(this).siblings()[1]).val();
+                if(treeNodeVal == dialogNodeVal){
+                    $(this).addClass("fa-check-square").removeClass("fa-square-o");
+                    $(this).closest('.code-tree-view').removeClass('collapse');
+                    return false;
+                }
+            });
+        });
+
+        if($('[class^=simplemodal]').length  == 0){
+            $($('#see-more-filter').html()).modalEx(options);
+            $('#see-more-filter').remove();
+        } else {
+            $('[class^=simplemodal]').show();
+        }
+        if($(this).closest('.filter-category').hasClass('cate-products')){
+            $('#products').click();
+        }
+        if($(this).closest('.filter-category').hasClass('cate-categories')){
+            $('#categories').click();
+        }
+        if($(this).closest('.filter-category').hasClass('cate-lans')){
+            $('#language-bindings').click();
+        }
+    });
+
+    // See more dialog handler
+    $(document).on('click', '.simplemodal-container .fa-times, .simplemodal-container .btn-secondary', function() {
+        $('[class^=simplemodal]').hide();
+    });
+    $(document).on('click', '.modal-body .nav a.nav-link', function() {
+        $(this).addClass("active").parents().siblings().find('a').removeClass("active");
+        $('.tab-content .' + $(this).attr('id')).show().siblings().hide();
+    });
+    $(document).on('keyup', '.tab-content .searchbox', function() {
+        var keywords = $(this).val();
+        $(this).parents().parents().find('>.fa-ul>li').each(function(){
+            if($($(this).find('>span')[0]).text().toLocaleLowerCase().contains(keywords.toLocaleLowerCase())){
+                $(this).removeClass("collapse");
+            }else{
+                $(this).addClass("collapse");
+            }
+        });
+    });
+    
+    $(document).on('click', '.modal-footer .btn-tertiary', function() {
+        $('.tab-content .checkbox').addClass("fa-square-o").removeClass("fa-check-square fa-minus-square");
+    });
+    $(document).on('click', '.modal-footer .btn-primary', function() {
+        $('.filter-category .checkbox').not('.fa-plus').addClass("fa-square-o").removeClass("fa-check-square");
+        $('.tab-content .products .cnode .fa-check-square').each(function(){
+            var dialogNodeVal = $($(this).siblings()[1]).val();
+            $('.cate-products .cnode i.checkbox').each(function(){
+                var treeNodeVal = $($(this).siblings()[1]).val();
+                if(treeNodeVal == dialogNodeVal){
+                    $(this).addClass("fa-check-square").removeClass("fa-square-o");
+                    $(this).closest('.code-tree-view').removeClass('collapse');
+                    return false;
+                }
+            });
+        });
+        checkParentNode(this);
+        $('.tab-content .categories .fa-check-square').each(function(){
+            var dialogNodeVal = $($(this).siblings()[1]).val();
+            $('.cate-categories i.checkbox').each(function(){
+                var treeNodeVal = $($(this).siblings()[1]).val();
+                if(treeNodeVal == dialogNodeVal){
+                    $(this).addClass("fa-check-square").removeClass("fa-square-o");
+                    $(this).closest('.code-tree-view').removeClass('collapse');
+                    return false;
+                }
+            });
+        });
+        $('.tab-content .language-bindings .fa-check-square').each(function(){
+            var dialogNodeVal = $($(this).siblings()[1]).val();
+            $('.cate-lans i.checkbox').each(function(){
+                var treeNodeVal = $($(this).siblings()[1]).val();
+                if(treeNodeVal == dialogNodeVal){
+                    $(this).addClass("fa-check-square").removeClass("fa-square-o");
+                    $(this).closest('.code-tree-view').removeClass('collapse');
+                    return false;
+                }
+            });
+        });
+        $('.filter-category .code-tree-view').each(function(){
+            if($(this).find('>i').hasClass('fa-square-o') && $(this).index() > 5){
+                $(this).addClass('collapse');
+            }
+        });
+        doFilter();
+        $('.simplemodal-container .btn-secondary').click();
+    });
+
+
+    // Initial filters according to the query parameters
+    var initFilterWithCriteria = function(){
+        url = window.location.href;
+        // get the last filter selection form cookie
+        var _categories = "";
+        var myurl = $.cookie("code_apis_filter");
+        if(<%=!apiGroupPage%> && myurl){
+            window.history.pushState(null, null, myurl);
+            url = myurl;
+            var arrUrl = url.split("&");
+            for(var i=0; i<arrUrl.length; i++){
+                if(arrUrl[i].indexOf("categories=") != -1){
+                    _categories = arrUrl[i].substring(11);
+                    _categories = window.atob(_categories);
+                }
+            }
+        }
+        
+        var _socv = getParameterByName('socv');
+        var _products = window.atob(getParameterByName('products'));
+        var _lans = window.atob(getParameterByName('lans'));
+        var _sorter = getParameterByName('sorter');
+        var _page = getParameterByName('page');
+        var _numPerPage = getParameterByName('numPerPage');
+        var _keywords = getParameterByName('keywords');
+
+        _page = _page ? _page : defaultPageNum;
+        _numPerPage = _numPerPage && _numPerPage>=5 && _numPerPage <= 100 ? _numPerPage : defaultNumPerPage;
+        _socv = _socv != 0 ? 1 : 0;
+        if(_socv == 1){
+        	$('#show-all .fa-ul li>i').addClass("fa-check-square").removeClass("fa-square-o");
+            setFilters();
+        }
+        var products = [], categories = [], lans = [];
+        if(_products){
+            $(_products.split(',')).each(function(){
+                products.push(decodeURI(this).replace('and', '&'));
+            });
+        } 
+        if(_categories){
+            $(_categories.split(',')).each(function(){
+                categories.push(decodeURI(this));
+            });
+        }
+        if(_lans){
+            $(_lans.split(',')).each(function(){
+                lans.push(decodeURI(this).replace('and', '&'));
+            });
+        }
+        $('.cate-products .cnode i.checkbox, .tab-content .products .cnode i.checkbox').each(function(){
+            var treeNodeVal = $($(this).siblings()[1]).val();
+            if($.inArray(treeNodeVal, products) > -1){
+                $(this).addClass("fa-check-square").removeClass("fa-square-o");
+                $(this).closest('.code-tree-view').removeClass('collapse');
+            }
+        });
+        checkParentNode();
+        $('.cate-categories i.checkbox, .tab-content .categories i.checkbox').each(function(){
+            var treeNodeVal = $($(this).siblings()[1]).val();
+            if($.inArray(treeNodeVal, categories) > -1){
+                $(this).addClass("fa-check-square").removeClass("fa-square-o");
+                $(this).closest('.code-tree-view').removeClass('collapse');
+            }
+        });
+        $('.cate-lans i.checkbox, .tab-content .language-bindings i.checkbox').each(function(){
+            var treeNodeVal = $($(this).siblings()[1]).val();
+            if($.inArray(treeNodeVal, lans) > -1){
+                $(this).addClass("fa-check-square").removeClass("fa-square-o");
+                $(this).closest('.code-tree-view').removeClass('collapse');
+            }
+        });
+
+        pageOptions.socv = _socv;
+        pageOptions.products = products;
+        pageOptions.categories = categories;
+        pageOptions.lans = lans;
+        pageOptions.sorter = _sorter;
+        pageOptions.pageNum = _page;
+        pageOptions.numPerPage = _numPerPage;
+        pageOptions.keywords = _keywords;
+
+        doFilter();
+    }
+    initFilterWithCriteria();
+
+    // Pagination button click handler
+    $(document).on('click', '#search-results-pagination span', function() {
+        var page = 1;
+        if($(this).text() != ''){
+            page = $(this).text();
+        }else if($(this).find('i').attr('class')){
+            if($(this).find('i').hasClass('fa-angle-right')){
+                page = parseInt($(this).prev().text()) + 1;
+            }else{
+                page = parseInt($(this).next().text()) - 1;;
+            }
+        }
+        pageOptions.pageNum = parseInt(page);
+        doPagination(pageOptions);
+    });
+
+    $('#api-sorter').change(function(){
+        window.location.href = updateParameterByName('sorter', $(this).val(), window.location.href);
+    });
+
+    // Number per apge select change handler
+    $('#api-num-perpage').change(function(){
+        pageOptions.numPerPage = parseInt($(this).val());
+        doPagination(pageOptions);
+    });
+});
+
+<%@include file = "/js/artifactsByArea.js" %>
+</script>
